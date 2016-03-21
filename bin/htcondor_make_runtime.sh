@@ -135,7 +135,7 @@ else
 
     pushd $WMCORE_PATH/src/python
     zip -rq $STARTDIR/WMCore.zip * || exit 3
-    zip -rq $STARTDIR/CRAB3.zip WMCore PSetTweaks -x \*.pyc || exit 3
+    zip -rq $STARTDIR/CRAB3.zip WMCore PSetTweaks Utils -x \*.pyc || exit 3
     popd
 
     pushd $CRABSERVER_PATH/src/python
