@@ -57,7 +57,7 @@ if [[ "x$RPM_RELEASE" != "x" ]]; then
 
     pushd $ORIGDIR/../WMCore-$WMCOREVER/build/lib/
     zip -r $STARTDIR/WMCore.zip *
-    zip -rq $STARTDIR/CRAB3.zip WMCore PSetTweaks -x \*.pyc || exit 3
+    zip -rq $STARTDIR/CRAB3.zip WMCore PSetTweaks Utils -x \*.pyc || exit 3
     popd
 
     pushd $ORIGDIR/build/lib
