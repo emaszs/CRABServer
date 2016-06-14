@@ -4,7 +4,7 @@ These are extensions which are not directly contained in WMCore.REST module.
 Collecting all here since aren't supposed to be many.
 """
 
-from ServerUtilities import USER_SANDBOX_EXCLUSIONS
+from ServerUtilities import USER_SANDBOX_EXCLUSIONS, NEW_USER_SANDBOX_EXCLUSIONS
 
 # WMCore dependecies here
 from WMCore.REST.Validation import _validate_one
@@ -132,7 +132,9 @@ def _check_tarfile(argname, val, hashkey, newchecksum):
     try:
         #This newchecksum param and the "else" branch is there for backward compatibility.
         #We can remove the whole commit at some point in the future
-        if newchecksum:
+        if newchecksum == 2:
+            digest = calculateChecksum(val.file, exclude=NEW_USER_SANDBOX_EXCLUSIONS)
+        elif newchecksum == 1:
             digest = calculateChecksum(val.file, exclude=USER_SANDBOX_EXCLUSIONS)
         else:
             tar = tarfile.open(fileobj=val.file, mode='r')

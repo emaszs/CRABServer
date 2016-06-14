@@ -819,8 +819,9 @@ class DagmanCreator(TaskAction.TaskAction):
 
         Also modified inputFiles list by appending a debug folder if extraction succeeds.
         """
+        tarFileName = 'sandbox.tar.gz' if not os.path.isfile('debug_files.tar.gz') else 'debug_files.tar.gz'
         try:
-            debugTar = tarfile.open('debug_files.tar.gz')
+            debugTar = tarfile.open(tarFileName)
             debugTar.extract('debug/crabConfig.py')
             debugTar.extract('debug/originalPSet.py')
             scriptExeName = kw['task'].get('tm_scriptexe')
@@ -837,7 +838,7 @@ class DagmanCreator(TaskAction.TaskAction):
                     os.chmod('debug/' + f, 0o644)
         except Exception as ex:
             self.logger.exception(ex)
-            self.uploadWarning("Extracting files from sandbox failed, ops monitor will not work.", \
+            self.uploadWarning("Extracting files from sandbox or debug tarball failed, ops monitor will not work.", \
                     kw['task']['user_proxy'], kw['task']['tm_taskname'])
 
         return
@@ -866,7 +867,8 @@ class DagmanCreator(TaskAction.TaskAction):
             ufc = UserFileCache(mydict={'cert': kw['task']['user_proxy'], 'key': kw['task']['user_proxy'], 'endpoint' : kw['task']['tm_cache_url']})
             try:
                 ufc.download(hashkey=kw['task']['tm_user_sandbox'].split(".")[0], output="sandbox.tar.gz")
-                ufc.download(hashkey=kw['task']['tm_debug_files'].split(".")[0], output="debug_files.tar.gz")
+                if kw['task']['tm_debug_files']:
+                    ufc.download(hashkey=kw['task']['tm_debug_files'].split(".")[0], output="debug_files.tar.gz")
             except Exception as ex:
                 self.logger.exception(ex)
                 raise TaskWorkerException("The CRAB3 server backend could not download the input sandbox with your code "+\
@@ -902,7 +904,8 @@ class DagmanCreator(TaskAction.TaskAction):
         if kw['task']['tm_input_dataset']:
             inputFiles.append("input_dataset_lumis.json")
             inputFiles.append("input_dataset_duplicate_lumis.json")
-        inputFiles.append("debug_files.tar.gz")
+        if kw['task']['tm_debug_files']:
+            inputFiles.append("debug_files.tar.gz")
 
         info, splitterResult = self.createSubdag(*args, **kw)
 
