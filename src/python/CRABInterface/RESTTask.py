@@ -132,7 +132,10 @@ class RESTTask(RESTEntity):
         except StopIteration:
             raise ExecutionError("Impossible to find task %s in the database." % kwargs["workflow"])
 
-        if row.user_webdir:
+        if row.user_webdir and "/CSstoragePath/" in row.user_webdir:
+            index = row.user_webdir.find("/CSstoragePath/")
+            suffix = row.user_webdir[index:]
+        elif row.user_webdir:
             #extract /cms1425/taskname from the user webdir
             suffix = re.search(r"(/[^/]+/[^/]+/?)$", row.user_webdir).group(0)
         else:
