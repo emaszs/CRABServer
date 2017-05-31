@@ -797,7 +797,8 @@ class ASOServerJob(object):
                           'rest_host': doc['rest_host'],
                           'rest_uri': doc['rest_uri']}
                 try:
-                    self.server.put(self.rest_uri_file_user_transfers, data=encodeRequest(newDoc))
+                    # self.server.put(self.rest_uri_file_user_transfers, data=encodeRequest(newDoc))
+                    pass
                 except HTTPException as hte:
                     msg  = "Error uploading document to database."
                     msg += " Transfer submission failed."
@@ -819,7 +820,8 @@ class ASOServerJob(object):
                           'transfer_retry_count': 0,
                           'subresource': 'updateDoc'}
                 try:
-                    self.server.post(self.rest_uri_file_user_transfers, data=encodeRequest(newDoc))
+                    # self.server.post(self.rest_uri_file_user_transfers, data=encodeRequest(newDoc))
+                    pass
                 except HTTPException as hte:
                     msg  = "Error updating document in database."
                     msg += " Transfer submission failed."
@@ -1300,7 +1302,7 @@ class PostJob():
             self.logger.exception("Unexpected error: %s" % sys.exc_info()[0])
             raise
 
-        return defer_num
+        return 0
 
     ## = = = = = PostJob = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
 
@@ -2188,7 +2190,8 @@ class PostJob():
         msg = msg % (self.logs_arch_file_name, rest_url, configreq)
         self.logger.debug(msg)
         try:
-            self.server.put(rest_uri, data = encodeRequest(configreq))
+            # self.server.put(rest_uri, data = encodeRequest(configreq))
+            pass
         except HTTPException as hte:
             msg = "Error uploading logs file metadata: %s" % (str(hte.headers))
             self.logger.error(msg)
@@ -2257,7 +2260,8 @@ class PostJob():
             msg = "Uploading output metadata for %s to https://%s: %s" % (lfn, rest_url, configreq)
             self.logger.debug(msg)
             try:
-                self.server.put(rest_uri, data = encodeRequest(configreq))
+                # self.server.put(rest_uri, data = encodeRequest(configreq))
+                pass
             except HTTPException as hte:
                 msg = "Error uploading input file metadata: %s" % (str(hte.headers))
                 self.logger.error(msg)
@@ -2320,6 +2324,7 @@ class PostJob():
                 for run in file_info['outfileruns']:
                     configreq.append(("outfileruns", run))
             if 'outfilelumis' in file_info:
+           	import pdb; pdb.set_trace()
                 for lumis in file_info['outfilelumis']:
                     configreq.append(("outfilelumis", lumis))
             if 'inparentlfns' in file_info:
@@ -2332,10 +2337,12 @@ class PostJob():
             rest_api = 'filemetadata'
             rest_uri = self.rest_uri_no_api + '/' + rest_api
             rest_url = self.rest_host + rest_uri
+            #ZZZ
             msg = "Uploading output metadata for %s to https://%s: %s" % (filename, rest_url, configreq)
             self.logger.debug(msg)
             try:
-                self.server.put(rest_uri, data = encodeRequest(configreq))
+                # self.server.put(rest_uri, data = encodeRequest(configreq))
+                pass
             except HTTPException as hte:
                 ## BrianB. Suppressing this exception is a tough decision.
                 ## If the file made it back alright, I suppose we can proceed.
@@ -2354,7 +2361,7 @@ class PostJob():
             msg = "Uploading output datasets to https://%s: %s" % (rest_url, configreq)
             self.logger.debug(msg)
             try:
-                self.server.post(rest_uri, data = encodeRequest(configreq))
+                # self.server.post(rest_uri, data = encodeRequest(configreq))
                 with open('output_datasets', 'w') as f:
                     f.write(' '.join(output_datasets))
             except HTTPException as hte:
@@ -2512,6 +2519,7 @@ class PostJob():
 
     def fill_output_files_info(self):
         """
+	ZZZ
         Fill self.output_files_info by parsing the job report.
         """
         def get_output_file_info(filename):
@@ -2571,7 +2579,12 @@ class PostJob():
                 file_info['outfilelumis'] = []
                 for run, lumis in output_file_info[u'runs'].items():
                     file_info['outfileruns'].append(str(run))
-                    file_info['outfilelumis'].append(','.join(map(str, lumis)))
+
+                    betterLumis = ','.join(['{0}:{1}'.format(str(lumi), str(numEvents)) for lumi, numEvents in lumis.iteritems()])
+
+                    import pdb; pdb.set_trace()
+                    #file_info['outfilelumis'].append(','.join(map(str, lumis)))
+                    file_info['outfilelumis'].append(betterLumis)
             else:
                 msg = "Output file info for %s not found in job report." % (orig_file_name)
                 self.logger.error(msg)
