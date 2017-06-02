@@ -55,14 +55,16 @@ class DataFileMetadata(object):
             binds[name] = [str(kwargs[name])]
 #          binds['runlumi'] = [str(dict(list(zip( kwargs['outfileruns'], [lumilist.split(',') for lumilist in kwargs['outfilelumis']]     ))))]
 
-        # Construct a dict like { runNum1: {lumi1: events1, lumi2: events2}, runNum2: {} ...}
+        outfilelumis = self.preprocess_lumi_strings(kwargs['outfilelumis'])
+        # Construct a dict like
+        # {runNum1: {lumi1: events1, lumi2: events2}, runNum2: {lumi3: events3, lumi4: events4}}
         # from two lists of runs and lumi info strings that look like:
         # runs: ['runNum1', 'runNum2']
         # lumi info: ['lumi1:events1,lumi2:events2', 'lumi3:events3,lumi4:events4]
         # By their index, run numbers correspond to the lumi info strings 
         # which is why we can use zip when creating the dict.
         lumiEventList = []
-        for lumis in map(str, kwargs['outfilelumis']):
+        for lumis in map(str, outfilelumis):
             lumiDict = dict((lumiEvents.split(":")) for lumiEvents in lumis.split(","))
             lumiEventList.append(lumiDict)
         binds['runlumi'] = [str(dict(zip(kwargs['outfileruns'], lumiEventList)))]
@@ -101,3 +103,13 @@ class DataFileMetadata(object):
         if hours:
             self.logger.debug("Deleting all the files older than %s hours" % hours)
             self.api.modifynocheck(self.FileMetaData.DeleteFilesByTime_sql, hours=[hours])
+
+    def preprocess_lumi_strings(lumis):
+        # For backwards compatibility. Remove when old postjobs die.
+        res = []
+        for lumistring in lumis:
+            if ":" not in lumistring:
+                res.append(','.join([lumi+":None" for lumi in lumistring.split(",")]))
+            else:
+                res.append(lumis)
+        return res
