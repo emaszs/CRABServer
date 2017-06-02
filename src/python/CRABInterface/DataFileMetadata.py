@@ -53,7 +53,19 @@ class DataFileMetadata(object):
         binds = {}
         for name in bindnames:
             binds[name] = [str(kwargs[name])]
-        binds['runlumi'] = [str(dict(list(zip(map(str, kwargs['outfileruns']), [map(str, lumilist.split(',')) for lumilist in kwargs['outfilelumis']]))))]
+#          binds['runlumi'] = [str(dict(list(zip( kwargs['outfileruns'], [lumilist.split(',') for lumilist in kwargs['outfilelumis']]     ))))]
+
+        # Construct a dict like { runNum1: {lumi1: events1, lumi2: events2}, runNum2: {} ...}
+        # from two lists of runs and lumi info strings that look like:
+        # runs: ['runNum1', 'runNum2']
+        # lumi info: ['lumi1:events1,lumi2:events2', 'lumi3:events3,lumi4:events4]
+        # By their index, run numbers correspond to the lumi info strings 
+        # which is why we can use zip when creating the dict.
+        lumiEventList = []
+        for lumis in map(str, kwargs['outfilelumis']):
+            lumiDict = dict((lumiEvents.split(":")) for lumiEvents in lumis.split(","))
+            lumiEventList.append(lumiDict)
+        binds['runlumi'] = [str(dict(zip(kwargs['outfileruns'], lumiEventList)))]
 
         #Changed to Select if exist, update, else insert
         binds['outtmplfn'] = binds['outlfn']
