@@ -10,6 +10,7 @@ import sys
 import classad
 import glob
 import copy
+import fcntl
 from shutil import move
 # Need to import HTCondorUtils from a parent directory, not easy when the files are not in python packages.
 # Solution by ajay, SO: http://stackoverflow.com/questions/11536764
@@ -35,6 +36,8 @@ NODE_DEFAULTS = {
 
 STATUS_CACHE_FILE = "task_process/status_cache.txt"
 FJR_PARSE_RES_FILE = "task_process/fjr_parse_results.txt"
+JOB_LOG_FILE = "job_log"
+LOGGING_FILE = "task_process/cache_status.log"
 
 #
 # insertCpu, parseJobLog, parsNodeStateV2 and parseErrorReport
@@ -244,91 +247,114 @@ def parseNodeStateV2(fp, nodes):
             # observed; STATUS_ERROR is terminal.
             info['State'] = 'failed'
 
-# --- New code ----
+class StatusCacher:
+    """
+    Parses logs in the spool dir and updates the status_cache.txt file.
+    """
 
-def storeNodesInfoInFile():
-    # Open cache file and get the location until which the jobs_log was parsed last time
-    try:
-        if os.path.exists(STATUS_CACHE_FILE) and os.stat(STATUS_CACHE_FILE).st_size > 0:
-            logging.debug("cache file found, opening and reading")
-            nodesStorage = open(STATUS_CACHE_FILE, "r")
+    #def __init__(self):
 
-            jobLogCheckpoint = int(nodesStorage.readline())
-            fjrParseResCheckpoint = int(nodesStorage.readline())
-            nodes = ast.literal_eval(nodesStorage.readline())
-            nodeMap = ast.literal_eval(nodesStorage.readline())
-            nodesStorage.close()
+
+    def readPreviousInfo(self):
+        """
+        Open cache file and get the location until which the jobs_log was parsed last time
+        """
+
+        previousInfoDict = {
+            "jobLogCheckpoint": 0,
+            "fjrParseResCheckpoint": 0,
+            "nodes": {},
+            "nodeMap": {}
+            }
+
+        try:
+            if os.path.exists(STATUS_CACHE_FILE) and os.stat(STATUS_CACHE_FILE).st_size > 0:
+                logging.debug("Cache file found, opening and reading")
+
+                with open(STATUS_CACHE_FILE, "r") as nodesStorage:
+                    previousInfoDict["jobLogCheckpoint"] = int(nodesStorage.readline())
+                    previousInfoDict["fjrParseResCheckpoint"] = int(nodesStorage.readline())
+                    previousInfoDict["nodes"] = ast.literal_eval(nodesStorage.readline())
+                    previousInfoDict["nodeMap"] = ast.literal_eval(nodesStorage.readline())
+            else:
+                logging.debug("Cache file not found, will start from scratch")
+        except Exception:
+            logging.exception("error during status_cache handling")
+
+        return previousInfoDict
+
+    def readNewInfo(self, infoDict):
+        """
+        Updates infoDict with new information.
+        """
+        with open(JOB_LOG_FILE, "r") as jobsLog:
+            jobsLog.seek(infoDict["jobLogCheckpoint"])
+            parseJobLog(jobsLog, infoDict["nodes"], infoDict["nodeMap"])
+            infoDict["jobLogCheckpoint"] = jobsLog.tell()
+
+        for fn in glob.glob("node_state*"):
+            with open(fn, 'r') as nodeState:
+                parseNodeStateV2(nodeState, infoDict["nodes"])
+
+        try:
+            errorSummary, infoDict["fjrParseResCheckpoint"] = self.summarizeFjrParseResults(
+                infoDict["fjrParseResCheckpoint"])
+            if errorSummary and infoDict["fjrParseResCheckpoint"]:
+                parseErrorReport(errorSummary, infoDict["nodes"])
+        except IOError:
+            logging.exception("Problem during error_summary file handling")
+
+    def storeNodesInfoInFile(self, infoDict):
+        """
+        Writes the contents of infoDict to file.
+        """
+
+        with open(STATUS_CACHE_FILE, "w") as cacheFile:
+            # Acquire blocking lock on the file
+            fcntl.flock(cacheFile.fileno(), fcntl.LOCK_EX)
+
+            cacheFile.write(str(infoDict["jobLogCheckpoint"]) + "\n")
+            cacheFile.write(str(infoDict["fjrParseResCheckpoint"]) + "\n")
+            cacheFile.write(str(infoDict["nodes"]) + "\n")
+            cacheFile.write(str(infoDict["nodeMap"]) + "\n")
+
+    def summarizeFjrParseResults(self, checkpoint):
+        '''
+        Reads the fjr_parse_results file line by line. The file likely contains multiple
+        errors for the same jobId coming from different retries, we only care about
+        the last error for each jobId. Since each postjob writes this information
+        sequentially (job retry #2 will be written after job retry #1), overwrite
+        whatever information there was before for each jobId.
+
+        Return the updated error dictionary and also the location until which the
+        fjr_parse_results file was read so that we can store it and
+        don't have t re-read the same information next time the cache_status.py runs.
+        '''
+
+        if os.path.exists(FJR_PARSE_RES_FILE):
+            with open(FJR_PARSE_RES_FILE, "r") as f:
+                f.seek(checkpoint)
+                content = f.readlines()
+                newCheckpoint = f.tell()
+
+            errDict = {}
+            for line in content:
+                fjrResult = ast.literal_eval(line)
+                jobId = fjrResult.keys()[0]
+                errDict[jobId] = fjrResult[jobId]
+            return errDict, newCheckpoint
         else:
-            logging.debug("cache file not found, creating")
-            jobLogCheckpoint = 0
-            fjrParseResCheckpoint = 0
-            nodes = {}
-            nodeMap = {}
-    except Exception:
-        logging.exception("error during status_cache handling")
-    jobsLog = open("job_log", "r")
+            return None, 0
 
-    jobsLog.seek(jobLogCheckpoint)
-
-    parseJobLog(jobsLog, nodes, nodeMap)
-    newJobLogCheckpoint = jobsLog.tell()
-    jobsLog.close()
-
-    for fn in glob.glob("node_state*"):
-        with open(fn, 'r') as nodeState:
-            parseNodeStateV2(nodeState, nodes)
-
-    try:
-        errorSummary, newFjrParseResCheckpoint = summarizeFjrParseResults(fjrParseResCheckpoint)
-        if errorSummary and newFjrParseResCheckpoint:
-            parseErrorReport(errorSummary, nodes)
-    except IOError:
-        logging.exception("error during error_summary file handling")
-
-    # First write the new cache file under a temporary name, so that other processes
-    # don't get an incomplete result. Then replace the old one with the new one.
-    tempFilename = (STATUS_CACHE_FILE + ".%s") % os.getpid()
-
-    nodesStorage = open(tempFilename, "w")
-    nodesStorage.write(str(newJobLogCheckpoint) + "\n")
-    nodesStorage.write(str(newFjrParseResCheckpoint) + "\n")
-    nodesStorage.write(str(nodes) + "\n")
-    nodesStorage.write(str(nodeMap) + "\n")
-    nodesStorage.close()
-
-    move(tempFilename, STATUS_CACHE_FILE)
-
-def summarizeFjrParseResults(checkpoint):
-    '''
-    Reads the fjr_parse_results file line by line. The file likely contains multiple
-    errors for the same jobId coming from different retries, we only care about
-    the last error for each jobId. Since each postjob writes this information
-    sequentially (job retry #2 will be written after job retry #1), overwrite
-    whatever information there was before for each jobId.
-
-    Return the updated error dictionary and also the location until which the
-    fjr_parse_results file was read so that we can store it and
-    don't have t re-read the same information next time the cache_status.py runs.
-    '''
-
-    if os.path.exists(FJR_PARSE_RES_FILE):
-        with open(FJR_PARSE_RES_FILE, "r") as f:
-            f.seek(checkpoint)
-            content = f.readlines()
-            newCheckpoint = f.tell()
-
-        errDict = {}
-        for line in content:
-            fjrResult = ast.literal_eval(line)
-            jobId = fjrResult.keys()[0]
-            errDict[jobId] = fjrResult[jobId]
-        return errDict, newCheckpoint
-    else:
-        return None, 0
+    def run(self):
+        infoDict = self.readPreviousInfo()
+        self.readNewInfo(infoDict)
+        self.storeNodesInfoInFile(infoDict)
 
 def main():
     try:
-        storeNodesInfoInFile()
+        cacher = StatusCacher()
+        cacher.run()
     except Exception:
         logging.exception("error during main loop")
 
