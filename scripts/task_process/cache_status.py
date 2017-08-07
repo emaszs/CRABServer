@@ -285,7 +285,7 @@ class StatusCacher:
 
     def readNewInfo(self, infoDict):
         """
-        Updates infoDict with new information.
+        Parses the logs from a certain checkpoint and updates infoDict accordingly.
         """
         with open(JOB_LOG_FILE, "r") as jobsLog:
             jobsLog.seek(infoDict["jobLogCheckpoint"])
