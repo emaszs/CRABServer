@@ -18,8 +18,6 @@ from shutil import move
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import HTCondorUtils
 
-logging.basicConfig(filename='task_process/cache_status.log', level=logging.DEBUG)
-
 NODE_DEFAULTS = {
     'Retries': 0,
     'Restarts': 0,
@@ -33,11 +31,6 @@ NODE_DEFAULTS = {
     'WallDurations': [],
     'JobIds': []
 }
-
-STATUS_CACHE_FILE = "task_process/status_cache.txt"
-FJR_PARSE_RES_FILE = "task_process/fjr_parse_results.txt"
-JOB_LOG_FILE = "job_log"
-LOGGING_FILE = "task_process/cache_status.log"
 
 #
 # insertCpu, parseJobLog, parsNodeStateV2 and parseErrorReport
@@ -247,13 +240,36 @@ def parseNodeStateV2(fp, nodes):
             # observed; STATUS_ERROR is terminal.
             info['State'] = 'failed'
 
+class InvalidConfigException(Exception):
+    pass
+
 class StatusCacher:
     """
     Parses logs in the spool dir and updates the status_cache.txt file.
+
+    Can be initialized with different log file locations for debugging purposes
+    by passing an override configuration dict to the init method.
     """
 
-    #def __init__(self):
+    cfgDict = {
+        "statusCacheFile": "task_process/status_cache.txt",
+        "fjrParseResFile": "task_process/fjr_parse_results.txt",
+        "jobLogFile": "job_log",
+        "loggingFile": "task_process/cache_status.log"
+        }
 
+    def __init__(self, **kwargs):
+        # Check if kwargs contains override settings and apply them to the cfgDict
+        for key in kwargs:
+            if key in self.cfgDict:
+                self.cfgDict[key] = kwargs[key]
+            else:
+                raise InvalidConfigException()
+        # Assign cfgDict contents as class attributes
+        for key in self.cfgDict:
+            setattr(self, key, self.cfgDict[key])
+
+        logging.basicConfig(filename=self.loggingFile, level=logging.DEBUG)
 
     def readPreviousInfo(self):
         """
@@ -268,10 +284,10 @@ class StatusCacher:
             }
 
         try:
-            if os.path.exists(STATUS_CACHE_FILE) and os.stat(STATUS_CACHE_FILE).st_size > 0:
+            if os.path.exists(self.statusCacheFile) and os.stat(self.statusCacheFile).st_size > 0:
                 logging.debug("Cache file found, opening and reading")
 
-                with open(STATUS_CACHE_FILE, "r") as nodesStorage:
+                with open(self.statusCacheFile, "r") as nodesStorage:
                     previousInfoDict["jobLogCheckpoint"] = int(nodesStorage.readline())
                     previousInfoDict["fjrParseResCheckpoint"] = int(nodesStorage.readline())
                     previousInfoDict["nodes"] = ast.literal_eval(nodesStorage.readline())
@@ -287,7 +303,7 @@ class StatusCacher:
         """
         Parses the logs from a certain checkpoint and updates infoDict accordingly.
         """
-        with open(JOB_LOG_FILE, "r") as jobsLog:
+        with open(self.jobLogFile, "r") as jobsLog:
             jobsLog.seek(infoDict["jobLogCheckpoint"])
             parseJobLog(jobsLog, infoDict["nodes"], infoDict["nodeMap"])
             infoDict["jobLogCheckpoint"] = jobsLog.tell()
@@ -309,10 +325,9 @@ class StatusCacher:
         Writes the contents of infoDict to file.
         """
 
-        with open(STATUS_CACHE_FILE, "w") as cacheFile:
+        with open(self.statusCacheFile, "w") as cacheFile:
             # Acquire blocking lock on the file
             fcntl.flock(cacheFile.fileno(), fcntl.LOCK_EX)
-
             cacheFile.write(str(infoDict["jobLogCheckpoint"]) + "\n")
             cacheFile.write(str(infoDict["fjrParseResCheckpoint"]) + "\n")
             cacheFile.write(str(infoDict["nodes"]) + "\n")
@@ -331,8 +346,8 @@ class StatusCacher:
         don't have t re-read the same information next time the cache_status.py runs.
         '''
 
-        if os.path.exists(FJR_PARSE_RES_FILE):
-            with open(FJR_PARSE_RES_FILE, "r") as f:
+        if os.path.exists(self.fjrParseResFile):
+            with open(self.fjrParseResFile, "r") as f:
                 f.seek(checkpoint)
                 content = f.readlines()
                 newCheckpoint = f.tell()
