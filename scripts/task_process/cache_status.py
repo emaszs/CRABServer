@@ -1,17 +1,19 @@
 #!/usr/bin/python
 from __future__ import print_function, division
 import re
-import time
-import logging
 import os
 import ast
-import json
 import sys
-import classad
+import time
+import json
 import glob
 import copy
 import fcntl
+import logging
+import classad
+import argparse
 from shutil import move
+from __builtin__ import str
 # Need to import HTCondorUtils from a parent directory, not easy when the files are not in python packages.
 # Solution by ajay, SO: http://stackoverflow.com/questions/11536764
 # /attempted-relative-import-in-non-package-even-with-init-py/27876800#comment28841658_19190695
@@ -259,13 +261,13 @@ class StatusCacher:
         }
 
     def __init__(self, **kwargs):
-        # Check if kwargs contains override settings and apply them to the cfgDict
+        # Check if kwargs contains non-empty override settings and apply them to the cfgDict
         for key in kwargs:
-            if key in self.cfgDict:
+            if key in self.cfgDict and kwargs[key]:
                 self.cfgDict[key] = kwargs[key]
-            else:
+            elif key not in self.cfgDict:
                 raise InvalidConfigException()
-        # Assign cfgDict contents as class attributes
+        # Set cfgDict contents as class attributes
         for key in self.cfgDict:
             setattr(self, key, self.cfgDict[key])
 
@@ -334,7 +336,7 @@ class StatusCacher:
             cacheFile.write(str(infoDict["nodeMap"]) + "\n")
 
     def summarizeFjrParseResults(self, checkpoint):
-        '''
+        """
         Reads the fjr_parse_results file line by line. The file likely contains multiple
         errors for the same jobId coming from different retries, we only care about
         the last error for each jobId. Since each postjob writes this information
@@ -344,7 +346,7 @@ class StatusCacher:
         Return the updated error dictionary and also the location until which the
         fjr_parse_results file was read so that we can store it and
         don't have t re-read the same information next time the cache_status.py runs.
-        '''
+        """
 
         if os.path.exists(self.fjrParseResFile):
             with open(self.fjrParseResFile, "r") as f:
@@ -367,13 +369,18 @@ class StatusCacher:
         self.storeNodesInfoInFile(infoDict)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--statusCacheFile', '-c', type=str)
+    parser.add_argument('--fjrParseResFile', '-f', type=str)
+    parser.add_argument('--jobLogFile', '-j', type=str)
+    parser.add_argument('--loggingFile', '-l', type=str)
+    cfgDict = vars(parser.parse_args())
     try:
-        cacher = StatusCacher()
+        cacher = StatusCacher(**cfgDict)
         cacher.run()
     except Exception:
-        logging.exception("error during main loop")
+        logging.exception("Error during main script execution")
 
 main()
-
 logging.debug("cache_status.py exiting")
 
